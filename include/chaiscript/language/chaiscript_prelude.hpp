@@ -242,7 +242,7 @@ def back_inserter(container) {
   bind(push_back, container, _);
 }
 
-def contains(container, item, compare_func) : call_exists(range, container) {
+def contains(container, item, compare_func) : (!container.is_type("string") || item.is_type("char")) && call_exists(range, container) {
   auto t_range := range(container);
   while (!t_range.empty()) {
     if ( compare_func(t_range.front(), item) ) {
@@ -254,7 +254,7 @@ def contains(container, item, compare_func) : call_exists(range, container) {
   false;
 }
 
-def contains(container, item) {
+def contains(container, item) : !container.is_type("string") || item.is_type("char") {
   contains(container, item, eq)
 }
 
@@ -535,16 +535,18 @@ def string::trim() {
 }
 
 
-def find(container, value, Function compare_func) : call_exists(range, container) {
+def find(container, value, Function compare_func) : (!container.is_type("string") || value.is_type("char")) && call_exists(range, container) {
+  auto n = unsigned_long_long(0);
   auto range := range(container);
   while (!range.empty()) {
     if (compare_func(range.front(), value)) {
-      return range;
+      return n;
     } else {
       range.pop_front();
+	  ++n;
     }
   }
-  range;
+  npos;
 }
 
 
