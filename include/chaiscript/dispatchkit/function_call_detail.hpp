@@ -72,7 +72,7 @@ namespace chaiscript
               if constexpr (std::is_same_v<chaiscript::Boxed_Value, std::decay_t<Q>>) {
                 return std::forward<Q>(q);
               } else if constexpr (std::is_reference_v<P>) {
-                return Boxed_Value(std::ref(std::forward<Q>(q)));
+                return Boxed_Value(std::ref(std::forward<Q>(q)), false, Temporaries{}); // TODO: to test
               } else {
                 return Boxed_Value(std::forward<Q>(q));
               }

@@ -169,11 +169,11 @@ namespace chaiscript
                 {
                   const From &d = detail::Cast_Helper<const From &>::cast(t_from, nullptr);
                   const To &data = static_cast<const To &>(d);
-                  return Boxed_Value(std::cref(data));
+                  return Boxed_Value(std::cref(data), false, Temporaries{&t_from, 1});
                 } else {
                   From &d = detail::Cast_Helper<From &>::cast(t_from, nullptr);
                   To &data = static_cast<To &>(d);
-                  return Boxed_Value(std::ref(data));
+                  return Boxed_Value(std::ref(data), false, Temporaries{&t_from, 1});
                 }
               }
             } else {
@@ -234,11 +234,11 @@ namespace chaiscript
                 {
                   const From &d = detail::Cast_Helper<const From &>::cast(t_from, nullptr);
                   const To &data = dynamic_cast<const To &>(d);
-                  return Boxed_Value(std::cref(data));
+                  return Boxed_Value(std::cref(data), false, Temporaries{&t_from, 1});
                 } else {
                   From &d = detail::Cast_Helper<From &>::cast(t_from, nullptr);
                   To &data = dynamic_cast<To &>(d);
-                  return Boxed_Value(std::ref(data));
+                  return Boxed_Value(std::ref(data), false, Temporaries{&t_from, 1});
                 }
               }
             } else {

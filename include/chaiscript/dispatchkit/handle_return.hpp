@@ -37,14 +37,14 @@ namespace chaiscript
         {
           template<typename T,
                    typename = std::enable_if_t<std::is_pod_v<std::decay_t<T>>>>
-          static Boxed_Value handle(T r)
+          static Boxed_Value handle(T r, Temporaries /*temporaries*/)
           {
             return Boxed_Value(std::move(r), true);
           }
 
           template<typename T,
                    typename = std::enable_if_t<!std::is_pod_v<std::decay_t<T>>>>
-          static Boxed_Value handle(T &&r)
+          static Boxed_Value handle(T &&r, Temporaries /*temporaries*/)
           {
             return Boxed_Value(std::make_shared<T>(std::forward<T>(r)), true);
           }
@@ -53,7 +53,7 @@ namespace chaiscript
       template<typename Ret>
         struct Handle_Return<const std::function<Ret> &>
         {
-          static Boxed_Value handle(const std::function<Ret> &f) {
+          static Boxed_Value handle(const std::function<Ret> &f, Temporaries /*temporaries*/) {
             return Boxed_Value(
                 chaiscript::make_shared<dispatch::Proxy_Function_Base, dispatch::Proxy_Function_Callable_Impl<Ret, std::function<Ret>>>(f)
               );
@@ -68,7 +68,7 @@ namespace chaiscript
       template<typename Ret>
         struct Handle_Return<const std::shared_ptr<std::function<Ret>>>
         {
-          static Boxed_Value handle(const std::shared_ptr<std::function<Ret>> &f) {
+          static Boxed_Value handle(const std::shared_ptr<std::function<Ret>> &f, Temporaries /*temporaries*/) {
             return Boxed_Value(
                 chaiscript::make_shared<dispatch::Proxy_Function_Base, dispatch::Assignable_Proxy_Function_Impl<Ret>>(std::ref(*f),f)
                 );
@@ -88,14 +88,14 @@ namespace chaiscript
       template<typename Ret>
         struct Handle_Return<std::function<Ret> &>
         {
-          static Boxed_Value handle(std::function<Ret> &f) {
+          static Boxed_Value handle(std::function<Ret> &f, Temporaries /*temporaries*/) {
             return Boxed_Value(
                 chaiscript::make_shared<dispatch::Proxy_Function_Base, dispatch::Assignable_Proxy_Function_Impl<Ret>>(std::ref(f),
                   std::shared_ptr<std::function<Ret>>())
               );
           }
 
-          static Boxed_Value handle(const std::function<Ret> &f) {
+          static Boxed_Value handle(const std::function<Ret> &f, Temporaries /*temporaries*/) {
             return Boxed_Value(
                 chaiscript::make_shared<dispatch::Proxy_Function_Base, dispatch::Proxy_Function_Callable_Impl<Ret, std::function<Ret>>>(f)
               );
@@ -105,43 +105,43 @@ namespace chaiscript
       template<typename Ret>
         struct Handle_Return<Ret *&>
         {
-          static Boxed_Value handle(Ret *p)
+          static Boxed_Value handle(Ret *p, Temporaries temporaries)
           {
-            return Boxed_Value(p, true);
+            return Boxed_Value(p, true, temporaries);
           }
         };
 
       template<typename Ret>
         struct Handle_Return<const Ret *&>
         {
-          static Boxed_Value handle(const Ret *p)
+          static Boxed_Value handle(const Ret *p, Temporaries temporaries)
           {
-            return Boxed_Value(p, true);
+            return Boxed_Value(p, true, temporaries);
           }
         };
 
       template<typename Ret>
         struct Handle_Return<Ret *>
         {
-          static Boxed_Value handle(Ret *p)
+          static Boxed_Value handle(Ret *p, Temporaries temporaries)
           {
-            return Boxed_Value(p, true);
+            return Boxed_Value(p, true, temporaries);
           }
         };
 
       template<typename Ret>
         struct Handle_Return<const Ret *>
         {
-          static Boxed_Value handle(const Ret *p)
+          static Boxed_Value handle(const Ret *p, Temporaries temporaries)
           {
-            return Boxed_Value(p, true);
+            return Boxed_Value(p, true, temporaries);
           }
         };
 
       template<typename Ret>
         struct Handle_Return<std::shared_ptr<Ret> &>
         {
-          static Boxed_Value handle(const std::shared_ptr<Ret> &r)
+          static Boxed_Value handle(const std::shared_ptr<Ret> &r, Temporaries /*temporaries*/)
           {
             return Boxed_Value(r, true);
           }
@@ -161,7 +161,7 @@ namespace chaiscript
       template<typename Ret>
         struct Handle_Return<std::unique_ptr<Ret>> : Handle_Return<std::unique_ptr<Ret> &>
         {
-          static Boxed_Value handle(std::unique_ptr<Ret> &&r)
+          static Boxed_Value handle(std::unique_ptr<Ret> &&r, Temporaries /*temporaries*/)
           {
             return Boxed_Value(std::move(r), true);
           }
@@ -171,9 +171,9 @@ namespace chaiscript
         struct Handle_Return_Ref
         {
           template<typename T>
-          static Boxed_Value handle(T &&r)
+          static Boxed_Value handle(T &&r, Temporaries temporaries)
           {
-            return Boxed_Value(std::cref(r), true);
+            return Boxed_Value(std::cref(r), true, temporaries);
           }
         };
 
@@ -181,9 +181,9 @@ namespace chaiscript
         struct Handle_Return_Ref<Ret, true>
         {
           template<typename T>
-          static Boxed_Value handle(T &&r)
+          static Boxed_Value handle(T &&r, Temporaries temporaries)
           {
-            return Boxed_Value(typename std::remove_reference<decltype(r)>::type{r}, true);
+            return Boxed_Value(typename std::remove_reference<decltype(r)>::type{r}, true, temporaries);
           }
         };
 
@@ -197,7 +197,7 @@ namespace chaiscript
       template<typename Ret>
         struct Handle_Return<const Ret>
         {
-          static Boxed_Value handle(Ret r)
+          static Boxed_Value handle(Ret r, Temporaries /*temporaries*/)
           {
             return Boxed_Value(std::move(r));
           }
@@ -206,16 +206,16 @@ namespace chaiscript
       template<typename Ret>
         struct Handle_Return<Ret &>
         {
-          static Boxed_Value handle(Ret &r)
+          static Boxed_Value handle(Ret &r, Temporaries temporaries)
           {
-            return Boxed_Value(std::ref(r));
+            return Boxed_Value(std::ref(r), false, temporaries); 
           }
         };
 
       template<>
         struct Handle_Return<Boxed_Value>
         {
-          static Boxed_Value handle(const Boxed_Value &r) noexcept
+          static Boxed_Value handle(const Boxed_Value &r, Temporaries /*temporaries*/) noexcept
           {
             return r;
           }
@@ -242,7 +242,7 @@ namespace chaiscript
       template<>
         struct Handle_Return<Boxed_Number>
         {
-          static Boxed_Value handle(const Boxed_Number &r) noexcept
+          static Boxed_Value handle(const Boxed_Number &r, Temporaries /*temporaries*/) noexcept
           {
             return r.bv;
           }

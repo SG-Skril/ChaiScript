@@ -494,6 +494,11 @@ namespace chaiscript
                   params[0].reset_return_value();
                   return params[1];
                 } else {
+					if (params[1].is_ref() && !params[0].is_ref()) {  // interleave copy construction if result is a reference and target is not
+						const auto typeName = t_ss->get_type_name(params[1].get_type_info());
+						std::array<Boxed_Value, 1> params2{std::move(params[1])};
+						params[1] = t_ss->call_function(typeName, m_clone_loc, Function_Params{params2}, t_ss.conversions());
+					}
                   params[1] = detail::clone_if_necessary(std::move(params[1]), m_clone_loc, t_ss);
                 }
               }
@@ -549,8 +554,9 @@ namespace chaiscript
               }
             }();
 
-          return t_ss->add_global_no_throw(Boxed_Value(), idname);
-
+          Boxed_Value bv;
+		  bv.set_is_ref(this->children[0]->identifier == AST_Node_Type::Reference); // tag target as reference according to the presence of '&'
+          return t_ss->add_global_no_throw(bv, idname);
         }
     };
 
@@ -582,7 +588,13 @@ namespace chaiscript
           const std::string &idname = this->children[0]->text;
 
           try {
-            Boxed_Value bv(detail::clone_if_necessary(this->children[1]->eval(t_ss), m_loc, t_ss));
+			auto incoming = this->children[1]->eval(t_ss);
+			if (incoming.is_ref()) { // interleave copy construction if result is a reference
+				const auto typeName = t_ss->get_type_name(incoming.get_type_info());
+				std::array<Boxed_Value, 1> params{std::move(incoming)};
+				incoming = t_ss->call_function(typeName, m_loc, Function_Params{params}, t_ss.conversions());
+			}
+			Boxed_Value bv(detail::clone_if_necessary(std::move (incoming), m_loc, t_ss));
             bv.reset_return_value();
             t_ss.add_object(idname, bv);
             return bv;
@@ -937,7 +949,7 @@ namespace chaiscript
           Boxed_Value range_expression_result = this->children[1]->eval(t_ss);
 
 
-          const auto do_loop = [&loop_var_name, &t_ss, this](const auto &ranged_thing){
+          const auto do_loop = [&range_expression_result, &loop_var_name, &t_ss, this](const auto &ranged_thing){
             try {
               for (auto &&loop_var : ranged_thing) {
                 // This scope push and pop might not be the best thing for perf
@@ -945,7 +957,7 @@ namespace chaiscript
                 chaiscript::eval::detail::Scope_Push_Pop spp(t_ss);
                 /// to-do make this if-constexpr with C++17 branch
                 if (!std::is_same<std::decay_t<decltype(loop_var)>, Boxed_Value>::value) {
-                  t_ss.add_get_object(loop_var_name, Boxed_Value(std::ref(loop_var)));
+                  t_ss.add_get_object(loop_var_name, Boxed_Value(std::ref(loop_var), false, Temporaries{&range_expression_result, 1}));
                 } else {
                   t_ss.add_get_object(loop_var_name, Boxed_Value(loop_var));
                 }
@@ -960,6 +972,9 @@ namespace chaiscript
             return void_var();
           };
 
+		  if (range_expression_result.get_type_info().bare_equal_type_info(typeid(Vector)))
+            return do_loop(boxed_cast<const Vector&>(range_expression_result));
+          else
           if (range_expression_result.get_type_info().bare_equal_type_info(typeid(std::vector<Boxed_Value>))) {
             return do_loop(boxed_cast<const std::vector<Boxed_Value> &>(range_expression_result));
           } else if (range_expression_result.get_type_info().bare_equal_type_info(typeid(std::map<std::string, Boxed_Value>))) {
@@ -1114,11 +1129,17 @@ namespace chaiscript
 
         Boxed_Value eval_internal(const chaiscript::detail::Dispatch_State &t_ss) const override {
           try {
-            std::vector<Boxed_Value> vec;
+            Vector vec;
             if (!this->children.empty()) {
               vec.reserve(this->children[0]->children.size());
               for (const auto &child : this->children[0]->children) {
-                vec.push_back(detail::clone_if_necessary(child->eval(t_ss), m_loc, t_ss));
+				auto incoming = child->eval(t_ss);
+				if (incoming.is_ref()) { // interleave copy construction if result is a reference
+					const auto typeName = t_ss->get_type_name(incoming.get_type_info());
+					std::array<Boxed_Value, 1> params{std::move(incoming)};
+					incoming = t_ss->call_function(typeName, m_loc, Function_Params{params}, t_ss.conversions());
+				}
+				vec.push_back(detail::clone_if_necessary(std::move (incoming), m_loc, t_ss));
               }
             }
             return const_var(std::move(vec));
@@ -1143,8 +1164,14 @@ namespace chaiscript
             std::map<std::string, Boxed_Value> retval;
 
             for (const auto &child : this->children[0]->children) {
+				auto incoming = child->children[1]->eval(t_ss);
+				if (incoming.is_ref()) { // interleave copy construction if result is a reference
+					const auto typeName = t_ss->get_type_name(incoming.get_type_info());
+					std::array<Boxed_Value, 1> params{std::move(incoming)};
+					incoming = t_ss->call_function(typeName, m_loc, Function_Params{params}, t_ss.conversions());
+				}
               retval.insert(std::make_pair(t_ss->boxed_cast<std::string>(child->children[0]->eval(t_ss)), 
-                            detail::clone_if_necessary(child->children[1]->eval(t_ss), m_loc, t_ss)));
+                            detail::clone_if_necessary(std::move(incoming), m_loc, t_ss)));
             }
 
             return const_var(std::move(retval));
@@ -1206,6 +1233,7 @@ namespace chaiscript
 
         Boxed_Value eval_internal(const chaiscript::detail::Dispatch_State &t_ss) const override{
           Boxed_Value bv;
+		  bv.set_is_ref(true); // tag target as reference
           t_ss.add_object(this->children[0]->text, bv);
           return bv;
         }
@@ -1373,16 +1401,16 @@ namespace chaiscript
             retval = this->children[0]->eval(t_ss);
           }
           catch (const exception::eval_error &e) {
-            retval = handle_exception(t_ss, Boxed_Value(std::ref(e)));
+			retval = handle_exception(t_ss, Boxed_Value(std::ref(e), false, Temporaries{}));
           }
           catch (const std::runtime_error &e) {
-            retval = handle_exception(t_ss, Boxed_Value(std::ref(e)));
+			retval = handle_exception(t_ss, Boxed_Value(std::ref(e), false, Temporaries{}));
           }
           catch (const std::out_of_range &e) {
-            retval = handle_exception(t_ss, Boxed_Value(std::ref(e)));
+			retval = handle_exception(t_ss, Boxed_Value(std::ref(e), false, Temporaries{}));
           }
           catch (const std::exception &e) {
-            retval = handle_exception(t_ss, Boxed_Value(std::ref(e)));
+			retval = handle_exception(t_ss, Boxed_Value(std::ref(e), false, Temporaries{}));
           }
           catch (Boxed_Value &e) {
             retval = handle_exception(t_ss, e);

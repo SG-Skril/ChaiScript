@@ -432,8 +432,7 @@ namespace chaiscript {
                   chaiscript::eval::detail::Scope_Push_Pop spp(t_ss);
 
                   int i = start_int;
-                  t_ss.add_object(id, var(&i));
-
+                  t_ss.add_object(id, var(&i, Temporaries{}));
                   try {
                     for (; i < end_int; ++i) {
                       try {

@@ -156,9 +156,9 @@ namespace chaiscript
 
 
       m_engine.add(fun(
-            [=, this](const dispatch::Proxy_Function_Base &t_fun, const std::vector<Boxed_Value> &t_params) -> Boxed_Value {
+            [=, this](const dispatch::Proxy_Function_Base &t_fun, const Vector& t_params) -> Boxed_Value {
               Type_Conversions_State s(this->m_engine.conversions(), this->m_engine.conversions().conversion_saves());
-              return t_fun(Function_Params{t_params}, s);
+              return t_fun(Function_Params{&t_params.front(), &t_params.front() + t_params.size()}, s);
             }), "call");
 
 
@@ -752,7 +752,7 @@ namespace chaiscript
           throw std::runtime_error("Namespace: " + t_namespace_name + " was already defined");
        }
        else if (m_namespace_generators.count(t_namespace_name)) {
-          m_engine.add_global(var(std::ref(m_namespace_generators[t_namespace_name]())), t_namespace_name);
+          m_engine.add_global(var(std::ref(m_namespace_generators[t_namespace_name]()), Temporaries{}), t_namespace_name);
        }
        else {
           throw std::runtime_error("No registered namespace: " + t_namespace_name);

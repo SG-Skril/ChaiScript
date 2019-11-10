@@ -18,9 +18,16 @@
 #include "../chaiscript_defines.hpp"
 #include "any.hpp"
 #include "type_info.hpp"
+// note: the use of small_vector instead of std::vector<Boxed_Value> is most likely not necessary
+#include <boost/container/small_vector.hpp>
+#include <gsl/span>
 
 namespace chaiscript 
 {
+    class Boxed_Value;
+	using Vector = boost::container::small_vector<Boxed_Value, 1>;
+	using Map = std::map<std::string, Boxed_Value>;
+	using Temporaries = gsl::span<const Boxed_Value>;
 
   /// \brief A wrapper for holding any valid C++ type. All types in ChaiScript are Boxed_Value objects
   /// \sa chaiscript::boxed_cast
@@ -41,16 +48,20 @@ namespace chaiscript
             chaiscript::detail::Any to,
             bool is_ref,
             const void *t_void_ptr,
-            bool t_return_value)
-          : m_type_info(ti), m_obj(std::move(to)), m_data_ptr(ti.is_const()?nullptr:const_cast<void *>(t_void_ptr)), m_const_data_ptr(t_void_ptr),
+            bool t_return_value,
+            Temporaries temporaries = {})
+          : m_type_info(ti), m_obj(std::move(to)), m_temporaries(), m_data_ptr(ti.is_const()?nullptr:const_cast<void *>(t_void_ptr)), m_const_data_ptr(t_void_ptr),
             m_is_ref(is_ref), m_return_value(t_return_value)
         {
+            for (auto& tmp: temporaries)
+                m_temporaries.push_back(tmp.m_data);
         }
 
         Data &operator=(const Data &rhs)
         {
           m_type_info = rhs.m_type_info;
           m_obj = rhs.m_obj;
+          m_temporaries = rhs.m_temporaries;
           m_is_ref = rhs.m_is_ref;
           m_data_ptr = rhs.m_data_ptr;
           m_const_data_ptr = rhs.m_const_data_ptr;
@@ -72,6 +83,7 @@ namespace chaiscript
 
         Type_Info m_type_info;
         chaiscript::detail::Any m_obj;
+        boost::container::small_vector<std::shared_ptr<const Data>, 3> m_temporaries;
         void *m_data_ptr;
         const void *m_const_data_ptr;
         std::unique_ptr<std::map<std::string, std::shared_ptr<Data>>> m_attrs;
@@ -125,29 +137,23 @@ namespace chaiscript
 
 
 
-        template<typename T>
-          static auto get(T *t, bool t_return_value)
-          {
-            return get(std::ref(*t), t_return_value);
+        template<typename T> static auto get(T *t, bool t_return_value) = delete;
+        template<typename T> static auto get(const T *t, bool t_return_value) = delete;
+        template<typename T> static auto get(std::reference_wrapper<T> obj, bool t_return_value) = delete;
+        template<typename T> static auto get(T *t, bool t_return_value, Temporaries temporaries) {
+            return get(std::ref(*t), t_return_value, temporaries);
           }
-
-        template<typename T>
-          static auto get(const T *t, bool t_return_value)
-          {
-            return get(std::cref(*t), t_return_value);
+        template<typename T> static auto get(const T *t, bool t_return_value, Temporaries temporaries) {
+            return get(std::cref(*t), t_return_value, temporaries);
           }
-
-
-        template<typename T>
-          static auto get(std::reference_wrapper<T> obj, bool t_return_value)
-          {
+        template<typename T> static auto get(std::reference_wrapper<T> obj, bool t_return_value, Temporaries temporaries) {
             auto p = &obj.get();
             return std::make_shared<Data>(
                   detail::Get_Type_Info<T>::get(),
                   chaiscript::detail::Any(std::move(obj)),
                   true,
                   p,
-                  t_return_value
+                  t_return_value, temporaries
                 );
           }
 
@@ -158,7 +164,7 @@ namespace chaiscript
             return std::make_shared<Data>(
                   detail::Get_Type_Info<T>::get(), 
                   chaiscript::detail::Any(std::make_shared<std::unique_ptr<T>>(std::move(obj))), 
-                  true,
+                  true, // why is 'is_ref' not set to false?
                   ptr,
                   t_return_value
                 );
@@ -197,6 +203,12 @@ namespace chaiscript
           typename = std::enable_if_t<!std::is_same_v<Boxed_Value, std::decay_t<T>>>>
         explicit Boxed_Value(T &&t, bool t_return_value = false)
           : m_data(Object_Data::get(std::forward<T>(t), t_return_value))
+        {
+        }
+        template<typename T,
+          typename = std::enable_if_t<!std::is_same_v<Boxed_Value, std::decay_t<T>>>>
+        explicit Boxed_Value(T &&t, bool t_return_value, Temporaries temporaries)
+          : m_data(Object_Data::get(std::forward<T>(t), t_return_value, temporaries))
         {
         }
 
@@ -291,6 +303,11 @@ namespace chaiscript
       bool is_ref() const noexcept
       {
         return m_data->m_is_ref;
+      }
+
+	  void set_is_ref(bool is_ref) const noexcept
+      {
+        m_data->m_is_ref = is_ref;
       }
 
       bool is_return_value() const noexcept
@@ -388,13 +405,19 @@ namespace chaiscript
     {
       return Boxed_Value(std::forward<T>(t));
     }
+  template<typename T> Boxed_Value var(T &&t, Temporaries temporaries) {
+      return Boxed_Value(std::forward<T>(t), false, temporaries);
+    }
+	template<typename T> struct is_ref_wrapper { static constexpr auto value = false; };
+	template<typename T> struct is_ref_wrapper<std::reference_wrapper<T>> { static constexpr auto value = true; };
+	template<typename T> constexpr auto is_ref_wrapper_v = is_ref_wrapper<T>::value;
 
   namespace detail {
     /// \brief Takes a value, copies it and returns a Boxed_Value object that is immutable
     /// \param[in] t Value to copy and make const
     /// \returns Immutable Boxed_Value 
     /// \sa Boxed_Value::is_const
-    template<typename T>
+    template<typename T, typename = std::enable_if_t<!std::is_pointer_v<T> && !is_ref_wrapper_v<T>>>
       Boxed_Value const_var_impl(const T &t)
       {
         return Boxed_Value(std::make_shared<typename std::add_const<T>::type >(t));
@@ -406,9 +429,10 @@ namespace chaiscript
     /// \returns Immutable Boxed_Value
     /// \sa Boxed_Value::is_const
     template<typename T>
-      Boxed_Value const_var_impl(T *t)
+      Boxed_Value const_var_impl(T *t, Temporaries temporaries)
+
       {
-        return Boxed_Value( const_cast<typename std::add_const<T>::type *>(t) );
+        return Boxed_Value( const_cast<typename std::add_const<T>::type *>(t) , false, temporaries);
       }
 
     /// \brief Takes a std::shared_ptr to a value, adds const to the pointed to type and returns an immutable Boxed_Value.
@@ -428,9 +452,9 @@ namespace chaiscript
     /// \returns Immutable Boxed_Value
     /// \sa Boxed_Value::is_const
     template<typename T>
-      Boxed_Value const_var_impl(const std::reference_wrapper<T> &t)
+      Boxed_Value const_var_impl(const std::reference_wrapper<T> &t, Temporaries temporaries)
       {
-        return Boxed_Value( std::cref(t.get()) );
+        return Boxed_Value( std::cref(t.get()), false, temporaries );
       }
   }
 
@@ -461,6 +485,9 @@ namespace chaiscript
     Boxed_Value const_var(const T &t)
     {
       return detail::const_var_impl(t);
+    }
+  template<typename T> Boxed_Value const_var(const T &t, Temporaries temporaries) {
+      return detail::const_var_impl(t, temporaries);
     }
 
   inline Boxed_Value void_var() {

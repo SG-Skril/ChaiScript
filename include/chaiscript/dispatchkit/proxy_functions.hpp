@@ -768,31 +768,31 @@ namespace chaiscript
           if (bv.is_const())
           {
             const Class *o = boxed_cast<const Class *>(bv, &t_conversions);
-            return do_call_impl<T>(o);
+            return do_call_impl<T>(o, Temporaries{&bv, 1});
           } else {
             Class *o = boxed_cast<Class *>(bv, &t_conversions);
-            return do_call_impl<T>(o);
+            return do_call_impl<T>(o, Temporaries{&bv, 1});
           }
         }
 
       private:
         template<typename Type>
-        auto do_call_impl(Class *o) const
+        auto do_call_impl(Class *o, Temporaries temporaries) const
         {
           if constexpr(std::is_pointer<Type>::value) {
-            return detail::Handle_Return<Type>::handle(o->*m_attr);
+            return detail::Handle_Return<Type>::handle(o->*m_attr, temporaries);
           } else {
-            return detail::Handle_Return<typename std::add_lvalue_reference<Type>::type>::handle(o->*m_attr);
+            return detail::Handle_Return<typename std::add_lvalue_reference<Type>::type>::handle(o->*m_attr, temporaries);
           }
         }
 
         template<typename Type>
-        auto do_call_impl(const Class *o) const
+        auto do_call_impl(const Class *o, Temporaries temporaries) const
         {
           if constexpr(std::is_pointer<Type>::value) {
-            return detail::Handle_Return<const Type>::handle(o->*m_attr);
+            return detail::Handle_Return<const Type>::handle(o->*m_attr, temporaries);
           } else {
-            return detail::Handle_Return<typename std::add_lvalue_reference<typename std::add_const<Type>::type>::type>::handle(o->*m_attr);
+            return detail::Handle_Return<typename std::add_lvalue_reference<typename std::add_const<Type>::type>::type>::handle(o->*m_attr, temporaries);
           }
         }
 

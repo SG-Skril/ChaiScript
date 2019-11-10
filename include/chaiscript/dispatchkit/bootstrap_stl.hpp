@@ -210,16 +210,67 @@ namespace chaiscript
       template<typename ContainerType>
         void assignable_type(const std::string &type, Module& m)
         {
+          if constexpr (std::is_same_v<ContainerType, Vector>) {
+			m.eval( "def " + type + "::`=`(" + type + " rhs){ \n"
+					"  this.clear();\n"
+                    "  this.reserve(rhs.size());\n"
+                    "  for (val: rhs){\n"
+                    "    this.push_back(clone(val));\n" // ensure deep copy
+                    "  }\n"
+                    "} \n"
+                    "def " + type + " (" + type + " rhs){ \n"
+					"  auto v := " + type + "();\n"
+                    "  v.reserve(rhs.size());\n"
+                    "  for (val: rhs){\n"
+                    "    v.push_back(clone(val));\n" // ensure deep copy
+                    "  }\n"
+                    "  v;\n"
+                    "}\n"
+                    );
+		  }
+          else if constexpr (std::is_same_v<ContainerType, Map>) {
+			m.eval( "def " + type + "::`=`(" + type + " rhs){ \n"
+					"  this.clear();\n"
+                    "  for (val: rhs){\n"
+                    "    this[val.first] = val.second;\n" // ensure deep copy
+                    "  }\n"
+                    "} \n"
+                    "def " + type + " (" + type + " rhs){ \n"
+					"  auto m := " + type + "();\n"
+                    "  for (val: rhs){\n"
+                    "    m[val.first] = val.second;\n" // ensure deep copy
+                    "  }\n"
+                    "  m;\n"
+                    "}\n"
+                    );			  
+		  }
+		  else {
           copy_constructor<ContainerType>(type, m);
           operators::assign<ContainerType>(m);
+        }
         }
 
       /// Add container resize concept to the given ContainerType
       /// http://www.cplusplus.com/reference/stl/
       template<typename ContainerType>
-        void resizable_type(const std::string &/*type*/, Module& m)
+        void resizable_type(const std::string & type, Module& m)
         {
+		  if constexpr (std::is_same_v<ContainerType, Vector>) {
+			m.eval( "def resize(" + type + " container, n, val){ \n"
+                    "  auto sz := container.size();\n"
+                    "  if (n > sz) {\n"
+					"    container.reserve(n);\n"
+                    "    for (auto i = sz; i < n; ++i){\n"
+                    "      container.push_back(clone(val));\n" // ensure deep copy
+                    "    }\n"
+                    "  }\n"
+                    "} \n"
+                    );
+		  }
+		  else {
           m.add(fun([](ContainerType *a, typename ContainerType::size_type n, const typename ContainerType::value_type& val) { return a->resize(n, val); } ), "resize");
+		  }
+        
           m.add(fun([](ContainerType *a, typename ContainerType::size_type n) { return a->resize(n); } ), "resize");
         }
 
@@ -300,7 +351,7 @@ namespace chaiscript
                     "# Pushes the second value onto the container while making a clone of the value\n"
                     "def push_back(" + type + " container, x)\n"
                     "{ \n"
-                    "  if (x.is_var_return_value()) {\n"
+                    "  if (x.is_var_return_value() && !x.is_var_reference()) {\n" // copy the element if the incoming boxed value is a reference
                     "    x.reset_var_return_value() \n"
                     "    container.push_back_ref(x) \n"
                     "  } else { \n"
@@ -315,7 +366,8 @@ namespace chaiscript
                 }
               }());
 
-          m.add(fun(&ContainerType::pop_back), "pop_back");
+          using pop_back = void (ContainerType::*)();
+          m.add(fun(static_cast<pop_back>(&ContainerType::pop_back)), "pop_back");
         }
 
 
@@ -382,8 +434,38 @@ namespace chaiscript
           m.add(fun(&PairType::first), "first");
           m.add(fun(&PairType::second), "second");
 
+		  if constexpr (std::is_same_v<PairType, std::pair<Boxed_Value, Boxed_Value>>) {
+			m.eval( "def " + type + "::`=`(" + type + " rhs){ \n"
+					"  this.first = rhs.first;\n"
+					"  this.second = rhs.second;\n"
+                    "} \n"
+                    "def " + type + " (" + type + " rhs){ \n"
+					"  " + type + "(rhs.first, rhs.second);\n"
+                    "} \n"
+					"def " + type + "(x, y) {\n"
+					"	auto p = " + type + "();\n"
+					"	p.first = x;\n"
+					"	p.second = y;\n"
+					"	p;\n"
+					"}\n");
+		    m.add(constructor<PairType ()>(), type);
+		  }
+		  else if constexpr (std::is_same_v<PairType, Map::value_type>) {
+			m.eval( "def " + type + " (" + type + " rhs){ \n"
+					"  " + type + "(rhs.first, rhs.second);\n"
+                    "} \n"
+					"def " + type + "(x, y) {\n"
+					"	create" + type + "(x, clone(y));\n"
+					"}\n");
+		    m.add(constructor<PairType ()>(), type);
+            m.add(fun([](const typename PairType::first_type& x, const typename PairType::second_type& y) -> PairType { return PairType{x, y}; }), "create" + type);
+		  }
+		  else {
           basic_constructors<PairType>(type, m);
           m.add(constructor<PairType (const typename PairType::first_type &, const typename PairType::second_type &)>(), type);
+			if constexpr (!std::is_const_v<typename PairType::first_type> && !std::is_const_v<typename PairType::second_type>)
+				operators::assign<PairType>(m);
+		  }
         }
 
 
@@ -407,6 +489,18 @@ namespace chaiscript
 
           m.add(fun(static_cast<erase_ptr>(&ContainerType::erase)), "erase");
 
+		  if constexpr (std::is_same_v<ContainerType, Map>) {
+			   m.eval(R"(
+                    def Map::insert(Map rhs) {
+                       for (p: rhs) {
+						  if (this.count(p.first) != 1) {
+							  this[p.first] = p.second;
+						  }
+					   }
+                   } )"
+                 );
+		  }
+		  else {
           m.add(fun(&detail::insert<ContainerType>), "insert");
 
           m.add(fun(&detail::insert_ref<ContainerType>),
@@ -417,6 +511,7 @@ namespace chaiscript
                   return "insert";
                 }
               }());
+        }
         }
 
       /// Add a MapType container
@@ -522,10 +617,9 @@ namespace chaiscript
           assignable_type<VectorType>(type, m);
           input_range_type<VectorType>(type, m);
 
-          if (typeid(VectorType) == typeid(std::vector<Boxed_Value>))
+          if (typeid(typename VectorType::value_type) == typeid(Boxed_Value)) 			  
           {
-            m.eval(R"(
-                    def Vector::`==`(Vector rhs) {
+            m.eval("def " + type + "::`==`(" + type + R"( rhs) {
                        if ( rhs.size() != this.size() ) {
                          return false;
                        } else {

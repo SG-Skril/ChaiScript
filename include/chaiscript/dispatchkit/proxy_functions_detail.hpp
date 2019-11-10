@@ -112,7 +112,7 @@ namespace chaiscript
             call_func(sig, std::index_sequence_for<Params...>{}, f, params, t_conversions);
             return Handle_Return<void>::handle();
           } else {
-            return Handle_Return<Ret>::handle(call_func(sig, std::index_sequence_for<Params...>{}, f, params, t_conversions));
+            return Handle_Return<Ret>::handle(call_func(sig, std::index_sequence_for<Params...>{}, f, params, t_conversions), Temporaries{params.begin(), params.end()});
           }
         }
 

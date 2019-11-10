@@ -47,7 +47,8 @@ namespace chaiscript
         auto lib = std::make_shared<Module>();
         bootstrap::Bootstrap::bootstrap(*lib);
 
-        bootstrap::standard_library::vector_type<std::vector<Boxed_Value> >("Vector", *lib);
+        bootstrap::standard_library::vector_type<std::vector<Boxed_Value> >("ChaiVector", *lib);
+        bootstrap::standard_library::vector_type<Vector>("Vector", *lib);
         bootstrap::standard_library::string_type<std::string>("string", *lib);
         bootstrap::standard_library::map_type<std::map<std::string, Boxed_Value> >("Map", *lib);
         bootstrap::standard_library::pair_type<std::pair<Boxed_Value, Boxed_Value > >("Pair", *lib);
