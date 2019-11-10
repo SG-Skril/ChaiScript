@@ -655,7 +655,23 @@ namespace chaiscript
               // After any decimal digits, support an optional exponent (3.7e3)
               return read_exponent_and_suffix();
             } else {
-              --m_position;
+				const auto svg_position = m_position;
+			    if (m_position.has_more() && (std::tolower(*m_position) == 'e')) {
+				  if (read_exponent_and_suffix())
+					return true;
+				  m_position = svg_position;
+				  --m_position; // '.'
+                  return false;
+			    }
+				SkipWS();				
+				if (!m_position.has_more() || (char_in_alphabet(*m_position,detail::symbol_alphabet) && *m_position != '.') 
+			 	 || *m_position == ':' || *m_position == '!' || *m_position == '\n' || *m_position == '\r' 
+				 || *m_position == ')' || *m_position == ',' || *m_position == ';') {
+					m_position = svg_position; // whitespaces
+					return true;
+				} 
+				m_position = svg_position;
+				--m_position; // '.'
             }
           }
         }
