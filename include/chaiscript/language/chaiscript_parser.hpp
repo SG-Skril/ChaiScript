@@ -2292,7 +2292,7 @@ namespace chaiscript
             else if (Eol()) {
               auto start = --m_position;
               while (Eol()) {}
-              if (Symbol(".")) {
+              if (Symbol(".") || Symbol("+") || Symbol("-")) {
                 has_more = true;
                 --m_position;
               } else {
