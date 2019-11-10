@@ -268,7 +268,7 @@ def map(container, func, inserter) : call_exists(range, container) {
 
 # Performs the second value function over the container first value. Creates a new container with the results
 def map(container, func) {
-  auto retval := new(container);
+  auto retval := Vector();
   map(container, func, back_inserter(retval));
   retval;
 }
@@ -430,7 +430,7 @@ def filter(container, f, inserter) : call_exists(range, container) {
 
 # Returns a new Vector which match the second value function
 def filter(container, f) {
-  auto retval := new(container);
+  auto retval := Vector();
   filter(container, f, back_inserter(retval));
   retval;
 }
